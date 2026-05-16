@@ -2,6 +2,7 @@ import Image from "next/image";
 import { isVideoUrl } from "../../../lib/report-media";
 import { formatSectionName } from "../../../lib/report-sections";
 import { supabase } from "../../../lib/supabase";
+import AiSummary from "./AiSummary";
 import PdfExportButton from "./PdfExportButton";
 
 const TEXT_BOX_TITLE = "Text Box";
@@ -257,6 +258,8 @@ export default async function PublicReportPage({ params }: PageProps) {
             </p>
           </section>
         )}
+
+        <AiSummary shareToken={shareToken} />
 
         <div className="grid gap-8">
           {sectionNavigationItems.map(({ id, section }) => {
