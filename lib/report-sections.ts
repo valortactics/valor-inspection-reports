@@ -3,10 +3,11 @@ export const defaultReportSections = [
   "2. Exterior",
   "3. Foundation",
   "4. Heating",
-  "5. Electrical",
-  "6. Plumbing",
-  "7. Insulation & Ventilation",
-  "8. Interior",
+  "5. Cooling",
+  "6. Electrical",
+  "7. Plumbing",
+  "8. Insulation & Ventilation",
+  "9. Interior",
 ];
 
 const numberedSectionNames = defaultReportSections.map((section) =>

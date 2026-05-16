@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
+import { isVideoUrl } from "../../../../../lib/report-media";
 import { formatSectionName } from "../../../../../lib/report-sections";
 import { supabase } from "../../../../../lib/supabase";
 
@@ -21,7 +22,7 @@ type Finding = {
   sort_order: number;
 };
 
-type Photo = {
+type ReportMedia = {
   id: string;
   finding_id: string;
   image_url: string;
@@ -36,23 +37,58 @@ type EditReportPageProps = {
 };
 
 type EditableFindingField = "description" | "severity" | "title";
+type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 const TEXT_BOX_TITLE = "Text Box";
+const AUTO_SAVE_DELAY_MS = 1200;
 const severities = ["Safety Defect", "Major Defect", "Minor Defect"];
+
+function getReportDetailsSnapshot({
+  title,
+  summaryText,
+  homePhotoUrl,
+}: {
+  title: string;
+  summaryText: string;
+  homePhotoUrl: string;
+}) {
+  return JSON.stringify({
+    title,
+    summaryText,
+    homePhotoUrl,
+  });
+}
+
+function getFindingSnapshot(finding: Finding) {
+  return JSON.stringify({
+    title: finding.title,
+    description: finding.description ?? "",
+    severity: finding.severity,
+    sort_order: finding.sort_order,
+  });
+}
 
 export default function EditReportPage({ params }: EditReportPageProps) {
   const { id: reportId } = use(params);
 
   const [reportTitle, setReportTitle] = useState("");
   const [summaryText, setSummaryText] = useState("");
+  const [homePhotoUrl, setHomePhotoUrl] = useState("");
   const [sections, setSections] = useState<Section[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [media, setMedia] = useState<ReportMedia[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("");
   const [shareToken, setShareToken] = useState("");
+  const [autoSaveStatus, setAutoSaveStatus] =
+    useState<AutoSaveStatus>("idle");
+  const [autoSaveError, setAutoSaveError] = useState("");
+
+  const savedReportDetailsRef = useRef("");
+  const savedFindingSnapshotsRef = useRef<Record<string, string>>({});
+  const autoSaveRequestRef = useRef(0);
 
   useEffect(() => {
     async function loadReport() {
@@ -101,30 +137,162 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       const findingIds = (findingsData ?? []).map((finding) => finding.id);
       const safeFindingIds = findingIds.length > 0 ? findingIds : [EMPTY_UUID];
 
-      const { data: photosData, error: photosError } = await supabase
+      const { data: mediaData, error: mediaError } = await supabase
         .from("photos")
         .select("*")
         .in("finding_id", safeFindingIds)
         .order("sort_order");
 
-      if (photosError) {
-        setMessage(photosError.message);
+      if (mediaError) {
+        setMessage(mediaError.message);
         setLoading(false);
         return;
       }
 
-      setReportTitle(report?.title ?? "");
+      const loadedTitle = report?.title ?? "";
+      const loadedSummaryText = report?.summary_text ?? "";
+      const loadedHomePhotoUrl = report?.home_photo_url ?? "";
+      const loadedFindings = findingsData ?? [];
+
+      savedReportDetailsRef.current = getReportDetailsSnapshot({
+        title: loadedTitle,
+        summaryText: loadedSummaryText,
+        homePhotoUrl: loadedHomePhotoUrl,
+      });
+      savedFindingSnapshotsRef.current = Object.fromEntries(
+        loadedFindings.map((finding) => [
+          finding.id,
+          getFindingSnapshot(finding),
+        ])
+      );
+
+      setReportTitle(loadedTitle);
       setStatus(report?.status ?? "draft");
       setShareToken(report?.share_token ?? "");
-      setSummaryText(report?.summary_text ?? "");
+      setSummaryText(loadedSummaryText);
+      setHomePhotoUrl(loadedHomePhotoUrl);
       setSections(sectionsData ?? []);
-      setFindings(findingsData ?? []);
-      setPhotos(photosData ?? []);
+      setFindings(loadedFindings);
+      setMedia(mediaData ?? []);
+      setAutoSaveStatus("saved");
+      setAutoSaveError("");
       setLoading(false);
     }
 
     void loadReport();
   }, [reportId]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    const currentSnapshot = getReportDetailsSnapshot({
+      title: reportTitle,
+      summaryText,
+      homePhotoUrl,
+    });
+
+    if (currentSnapshot === savedReportDetailsRef.current) {
+      return;
+    }
+
+    setAutoSaveStatus("pending");
+    setAutoSaveError("");
+
+    const timeoutId = window.setTimeout(async () => {
+      const requestId = autoSaveRequestRef.current + 1;
+      autoSaveRequestRef.current = requestId;
+
+      setAutoSaveStatus("saving");
+
+      const { error } = await supabase
+        .from("reports")
+        .update({
+          title: reportTitle,
+          summary_text: summaryText,
+          home_photo_url: homePhotoUrl || null,
+        })
+        .eq("id", reportId);
+
+      if (error) {
+        if (autoSaveRequestRef.current === requestId) {
+          setAutoSaveStatus("error");
+          setAutoSaveError(error.message);
+        }
+
+        return;
+      }
+
+      savedReportDetailsRef.current = currentSnapshot;
+
+      if (autoSaveRequestRef.current === requestId) {
+        setAutoSaveStatus("saved");
+        setAutoSaveError("");
+      }
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [homePhotoUrl, loading, reportId, reportTitle, summaryText]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    const changedFindings = findings.filter(
+      (finding) =>
+        getFindingSnapshot(finding) !==
+        savedFindingSnapshotsRef.current[finding.id]
+    );
+
+    if (changedFindings.length === 0) {
+      return;
+    }
+
+    setAutoSaveStatus("pending");
+    setAutoSaveError("");
+
+    const timeoutId = window.setTimeout(async () => {
+      const requestId = autoSaveRequestRef.current + 1;
+      autoSaveRequestRef.current = requestId;
+
+      setAutoSaveStatus("saving");
+
+      for (const finding of changedFindings) {
+        const { error } = await supabase
+          .from("findings")
+          .update({
+            title: finding.title,
+            description: finding.description,
+            severity: finding.severity,
+            sort_order: finding.sort_order,
+          })
+          .eq("id", finding.id);
+
+        if (error) {
+          if (autoSaveRequestRef.current === requestId) {
+            setAutoSaveStatus("error");
+            setAutoSaveError(error.message);
+          }
+
+          return;
+        }
+
+        savedFindingSnapshotsRef.current = {
+          ...savedFindingSnapshotsRef.current,
+          [finding.id]: getFindingSnapshot(finding),
+        };
+      }
+
+      if (autoSaveRequestRef.current === requestId) {
+        setAutoSaveStatus("saved");
+        setAutoSaveError("");
+      }
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [findings, loading]);
 
   async function togglePublish() {
     const newStatus = status === "published" ? "draft" : "published";
@@ -147,13 +315,92 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
   async function saveReportDetails() {
     setMessage("Saving report details...");
+    setAutoSaveStatus("saving");
 
     const { error } = await supabase
       .from("reports")
       .update({
         title: reportTitle,
         summary_text: summaryText,
+        home_photo_url: homePhotoUrl || null,
       })
+      .eq("id", reportId);
+
+    if (error) {
+      setMessage(error.message);
+      setAutoSaveStatus("error");
+      setAutoSaveError(error.message);
+      return;
+    }
+
+    savedReportDetailsRef.current = getReportDetailsSnapshot({
+      title: reportTitle,
+      summaryText,
+      homePhotoUrl,
+    });
+    setAutoSaveStatus("saved");
+    setAutoSaveError("");
+    setMessage("Report details saved.");
+  }
+
+  async function uploadHomePhoto(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setMessage("Please choose an image file for the home photo.");
+      return;
+    }
+
+    setMessage("Uploading home photo...");
+
+    const fileExt =
+      file.name.split(".").pop() || (file.type.startsWith("video/") ? "mp4" : "jpg");
+    const fileName = `${reportId}/home/${crypto.randomUUID()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("inspection-photos")
+      .upload(fileName, file);
+
+    if (uploadError) {
+      setMessage(uploadError.message);
+      return;
+    }
+
+    const { data } = supabase.storage
+      .from("inspection-photos")
+      .getPublicUrl(fileName);
+
+    const { error: reportError } = await supabase
+      .from("reports")
+      .update({ home_photo_url: data.publicUrl })
+      .eq("id", reportId);
+
+    if (reportError) {
+      setMessage(reportError.message);
+      return;
+    }
+
+    setHomePhotoUrl(data.publicUrl);
+    setMessage("Home photo uploaded.");
+  }
+
+  function uploadHomePhotoFiles(files: FileList) {
+    const imageFile = Array.from(files).find((file) =>
+      file.type.startsWith("image/")
+    );
+
+    if (!imageFile) {
+      setMessage("Please choose an image file for the home photo.");
+      return;
+    }
+
+    void uploadHomePhoto(imageFile);
+  }
+
+  async function removeHomePhoto() {
+    setMessage("Removing home photo...");
+
+    const { error } = await supabase
+      .from("reports")
+      .update({ home_photo_url: null })
       .eq("id", reportId);
 
     if (error) {
@@ -161,7 +408,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       return;
     }
 
-    setMessage("Report details saved.");
+    setHomePhotoUrl("");
+    setMessage("Home photo removed.");
   }
 
   async function addFinding(sectionId: string) {
@@ -186,6 +434,10 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       return;
     }
 
+    savedFindingSnapshotsRef.current = {
+      ...savedFindingSnapshotsRef.current,
+      [data.id]: getFindingSnapshot(data),
+    };
     setFindings((currentFindings) => [...currentFindings, data]);
     setMessage("Finding added.");
   }
@@ -212,6 +464,10 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       return;
     }
 
+    savedFindingSnapshotsRef.current = {
+      ...savedFindingSnapshotsRef.current,
+      [data.id]: getFindingSnapshot(data),
+    };
     setFindings((currentFindings) => [...currentFindings, data]);
     setMessage("Text box added.");
   }
@@ -230,6 +486,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
   async function saveFinding(finding: Finding) {
     setMessage("Saving finding...");
+    setAutoSaveStatus("saving");
 
     const { error } = await supabase
       .from("findings")
@@ -243,9 +500,17 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
     if (error) {
       setMessage(error.message);
+      setAutoSaveStatus("error");
+      setAutoSaveError(error.message);
       return;
     }
 
+    savedFindingSnapshotsRef.current = {
+      ...savedFindingSnapshotsRef.current,
+      [finding.id]: getFindingSnapshot(finding),
+    };
+    setAutoSaveStatus("saved");
+    setAutoSaveError("");
     setMessage("Finding saved.");
   }
 
@@ -263,16 +528,26 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     setFindings((currentFindings) =>
       currentFindings.filter((finding) => finding.id !== findingId)
     );
-    setPhotos((currentPhotos) =>
-      currentPhotos.filter((photo) => photo.finding_id !== findingId)
+    setMedia((currentMedia) =>
+      currentMedia.filter((mediaItem) => mediaItem.finding_id !== findingId)
     );
+    const remainingFindingSnapshots = {
+      ...savedFindingSnapshotsRef.current,
+    };
+    delete remainingFindingSnapshots[findingId];
+    savedFindingSnapshotsRef.current = remainingFindingSnapshots;
     setMessage("Finding deleted.");
   }
 
-  async function uploadPhoto(findingId: string, file: File) {
-    setMessage("Uploading photo...");
+  async function uploadMedia(findingId: string, file: File) {
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      setMessage("Please choose an image or video file.");
+      return;
+    }
 
-    const fileExt = file.name.split(".").pop();
+    setMessage("Uploading media...");
+
+    const fileExt = file.name.split(".").pop() || "jpg";
     const fileName = `${reportId}/${findingId}/${crypto.randomUUID()}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
@@ -288,37 +563,44 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       .from("inspection-photos")
       .getPublicUrl(fileName);
 
-    const findingPhotos = photos.filter(
-      (photo) => photo.finding_id === findingId
+    const findingMedia = media.filter(
+      (mediaItem) => mediaItem.finding_id === findingId
     );
 
-    const { data: photoRow, error: photoError } = await supabase
+    const { data: mediaRow, error: mediaError } = await supabase
       .from("photos")
       .insert({
         finding_id: findingId,
         image_url: data.publicUrl,
         caption: "",
-        sort_order: findingPhotos.length,
+        sort_order: findingMedia.length,
       })
       .select()
       .single();
 
-    if (photoError) {
-      setMessage(photoError.message);
+    if (mediaError) {
+      setMessage(mediaError.message);
       return;
     }
 
-    setPhotos((currentPhotos) => [...currentPhotos, photoRow]);
-    setMessage("Photo uploaded.");
+    setMedia((currentMedia) => [...currentMedia, mediaRow]);
+    setMessage(
+      file.type.startsWith("video/") ? "Video uploaded." : "Photo uploaded."
+    );
   }
 
-  function uploadImageFiles(findingId: string, files: FileList) {
-    const imageFiles = Array.from(files).filter((file) =>
-      file.type.startsWith("image/")
+  function uploadMediaFiles(findingId: string, files: FileList) {
+    const mediaFiles = Array.from(files).filter(
+      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
     );
 
-    imageFiles.forEach((file) => {
-      void uploadPhoto(findingId, file);
+    if (mediaFiles.length === 0) {
+      setMessage("Please choose image or video files.");
+      return;
+    }
+
+    mediaFiles.forEach((file) => {
+      void uploadMedia(findingId, file);
     });
   }
 
@@ -326,18 +608,81 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     return findings.filter((finding) => finding.section_id === sectionId);
   }
 
-  function getPhotosForFinding(findingId: string) {
-    return photos.filter((photo) => photo.finding_id === findingId);
+  function getMediaForFinding(findingId: string) {
+    return media.filter((mediaItem) => mediaItem.finding_id === findingId);
   }
 
   function isTextBoxFinding(finding: Finding) {
     return finding.title === TEXT_BOX_TITLE;
   }
 
+  function renderMediaPreview(mediaItem: ReportMedia, altText: string) {
+    if (isVideoUrl(mediaItem.image_url)) {
+      return (
+        <div
+          key={mediaItem.id}
+          className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm"
+        >
+          <video
+            src={mediaItem.image_url}
+            controls
+            playsInline
+            preload="metadata"
+            className="aspect-square w-full bg-black object-contain"
+          />
+
+          <a
+            href={mediaItem.image_url}
+            target="_blank"
+            rel="noreferrer"
+            className="block p-2 text-xs text-[#394146] underline"
+          >
+            Open video in new tab
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <a
+        key={mediaItem.id}
+        href={mediaItem.image_url}
+        target="_blank"
+        rel="noreferrer"
+        className="group overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm"
+      >
+        <div className="relative aspect-square w-full">
+          <Image
+            src={mediaItem.image_url}
+            alt={mediaItem.caption ?? altText}
+            fill
+            unoptimized
+            sizes="(min-width: 768px) 25vw, 50vw"
+            className="object-cover transition group-hover:scale-105"
+          />
+        </div>
+
+        <div className="p-2 text-xs text-[#394146]">
+          Click to open full size
+        </div>
+      </a>
+    );
+  }
+
   const clientLink =
     shareToken && typeof window !== "undefined"
       ? `${window.location.origin}/r/${shareToken}`
       : "";
+  const autoSaveText =
+    autoSaveStatus === "pending"
+      ? "Autosave pending"
+      : autoSaveStatus === "saving"
+        ? "Autosaving"
+        : autoSaveStatus === "saved"
+          ? "All changes saved"
+          : autoSaveStatus === "error"
+            ? `Autosave failed: ${autoSaveError}`
+            : "";
 
   if (loading) {
     return <main className="p-10">Loading report...</main>;
@@ -350,7 +695,21 @@ export default function EditReportPage({ params }: EditReportPageProps) {
           Back to Dashboard
         </Link>
 
-        <h1 className="mt-6 font-serif text-5xl">Edit Report</h1>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <h1 className="font-serif text-5xl">Edit Report</h1>
+
+          {autoSaveText && (
+            <div
+              className={`w-fit rounded-full px-4 py-2 text-xs font-semibold ${
+                autoSaveStatus === "error"
+                  ? "bg-red-50 text-red-700"
+                  : "bg-white text-[#394146]"
+              }`}
+            >
+              {autoSaveText}
+            </div>
+          )}
+        </div>
 
         {message && (
           <div className="mt-6 rounded-xl border border-black/10 bg-white p-4 text-sm">
@@ -376,6 +735,72 @@ export default function EditReportPage({ params }: EditReportPageProps) {
               onChange={(event) => setSummaryText(event.target.value)}
               placeholder="Write a brief summary of the inspection here..."
             />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold">Large Home Photo</label>
+
+            <label
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                uploadHomePhotoFiles(event.dataTransfer.files);
+              }}
+              className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-[#f7f4ec] p-6 text-center transition hover:bg-white"
+            >
+              <span className="font-semibold text-[#252b2e]">
+                Drag the home photo here
+              </span>
+
+              <span className="mt-1 text-sm text-[#394146]">
+                or click to choose an image
+              </span>
+
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files) {
+                    uploadHomePhotoFiles(event.target.files);
+                  }
+
+                  event.target.value = "";
+                }}
+              />
+            </label>
+
+            {homePhotoUrl && (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-black/10 bg-[#f7f4ec] shadow-sm">
+                <a href={homePhotoUrl} target="_blank" rel="noreferrer">
+                  <div className="relative aspect-[16/9] w-full">
+                    <Image
+                      src={homePhotoUrl}
+                      alt="Large home photo preview"
+                      fill
+                      unoptimized
+                      sizes="(min-width: 1024px) 896px, 100vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </a>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <p className="text-sm text-[#394146]">
+                    This photo will appear below Certifications on the client
+                    page.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={removeHomePhoto}
+                    className="rounded-full border border-red-300 px-5 py-2 text-sm font-semibold text-red-700"
+                  >
+                    Remove Home Photo
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <button
@@ -445,14 +870,14 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
                       <div className="mt-4">
                         <label className="mb-2 block text-sm font-semibold">
-                          Photos
+                          Photos & Videos
                         </label>
 
                         <label
                           onDragOver={(event) => event.preventDefault()}
                           onDrop={(event) => {
                             event.preventDefault();
-                            uploadImageFiles(
+                            uploadMediaFiles(
                               finding.id,
                               event.dataTransfer.files
                             );
@@ -460,21 +885,21 @@ export default function EditReportPage({ params }: EditReportPageProps) {
                           className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-[#f7f4ec] p-6 text-center transition hover:bg-white"
                         >
                           <span className="font-semibold text-[#252b2e]">
-                            Drag photos here
+                            Drag photos or videos here
                           </span>
 
                           <span className="mt-1 text-sm text-[#394146]">
-                            or click to choose images
+                            or click to choose files
                           </span>
 
                           <input
                             type="file"
-                            accept="image/*"
+                            accept="image/*,video/*"
                             multiple
                             className="hidden"
                             onChange={(event) => {
                               if (event.target.files) {
-                                uploadImageFiles(
+                                uploadMediaFiles(
                                   finding.id,
                                   event.target.files
                                 );
@@ -485,37 +910,20 @@ export default function EditReportPage({ params }: EditReportPageProps) {
                           />
                         </label>
 
-                        {getPhotosForFinding(finding.id).length > 0 && (
+                        {getMediaForFinding(finding.id).length > 0 && (
                           <div className="mt-4">
                             <p className="mb-3 text-sm font-semibold text-[#394146]">
-                              Photo Preview
+                              Media Preview
                             </p>
 
                             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                              {getPhotosForFinding(finding.id).map((photo) => (
-                                <a
-                                  key={photo.id}
-                                  href={photo.image_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="group overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm"
-                                >
-                                  <div className="relative aspect-square w-full">
-                                    <Image
-                                      src={photo.image_url}
-                                      alt={photo.caption ?? "Text box photo"}
-                                      fill
-                                      unoptimized
-                                      sizes="(min-width: 768px) 25vw, 50vw"
-                                      className="object-cover transition group-hover:scale-105"
-                                    />
-                                  </div>
-
-                                  <div className="p-2 text-xs text-[#394146]">
-                                    Click to open full size
-                                  </div>
-                                </a>
-                              ))}
+                              {getMediaForFinding(finding.id).map(
+                                (mediaItem) =>
+                                  renderMediaPreview(
+                                    mediaItem,
+                                    "Text box media"
+                                  )
+                              )}
                             </div>
                           </div>
                         )}
@@ -591,14 +999,14 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
                         <div>
                           <label className="mb-2 block text-sm font-semibold">
-                            Photos
+                            Photos & Videos
                           </label>
 
                           <label
                             onDragOver={(event) => event.preventDefault()}
                             onDrop={(event) => {
                               event.preventDefault();
-                              uploadImageFiles(
+                              uploadMediaFiles(
                                 finding.id,
                                 event.dataTransfer.files
                               );
@@ -606,21 +1014,21 @@ export default function EditReportPage({ params }: EditReportPageProps) {
                             className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-white p-6 text-center transition hover:bg-[#f7f4ec]"
                           >
                             <span className="font-semibold text-[#252b2e]">
-                              Drag photos here
+                              Drag photos or videos here
                             </span>
 
                             <span className="mt-1 text-sm text-[#394146]">
-                              or click to choose images
+                              or click to choose files
                             </span>
 
                             <input
                               type="file"
-                              accept="image/*"
+                              accept="image/*,video/*"
                               multiple
                               className="hidden"
                               onChange={(event) => {
                                 if (event.target.files) {
-                                  uploadImageFiles(
+                                  uploadMediaFiles(
                                     finding.id,
                                     event.target.files
                                   );
@@ -631,37 +1039,20 @@ export default function EditReportPage({ params }: EditReportPageProps) {
                             />
                           </label>
 
-                          {getPhotosForFinding(finding.id).length > 0 && (
+                          {getMediaForFinding(finding.id).length > 0 && (
                             <div className="mt-4">
                               <p className="mb-3 text-sm font-semibold text-[#394146]">
-                                Photo Preview
+                                Media Preview
                               </p>
 
                               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                                {getPhotosForFinding(finding.id).map((photo) => (
-                                  <a
-                                    key={photo.id}
-                                    href={photo.image_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="group overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm"
-                                  >
-                                    <div className="relative aspect-square w-full">
-                                      <Image
-                                        src={photo.image_url}
-                                        alt={photo.caption ?? "Inspection photo"}
-                                        fill
-                                        unoptimized
-                                        sizes="(min-width: 768px) 25vw, 50vw"
-                                        className="object-cover transition group-hover:scale-105"
-                                      />
-                                    </div>
-
-                                    <div className="p-2 text-xs text-[#394146]">
-                                      Click to open full size
-                                    </div>
-                                  </a>
-                                ))}
+                                {getMediaForFinding(finding.id).map(
+                                  (mediaItem) =>
+                                    renderMediaPreview(
+                                      mediaItem,
+                                      "Inspection media"
+                                    )
+                                )}
                               </div>
                             </div>
                           )}
