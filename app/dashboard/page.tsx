@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DashboardReportActions from "./DashboardReportActions";
 import { supabase } from "../../lib/supabase";
 
 type Report = {
@@ -9,6 +10,7 @@ type Report = {
   inspection_date: string | null;
   status: string | null;
   share_token: string | null;
+  home_photo_url: string | null;
   created_at: string;
 };
 
@@ -106,12 +108,11 @@ export default async function DashboardPage() {
                       </td>
 
                       <td className="py-4 pr-4">
-                        <Link
-                          href={`/dashboard/reports/${report.id}/edit`}
-                          className="rounded-full bg-[#252b2e] px-4 py-2 text-xs font-semibold text-[#f7f4ec]"
-                        >
-                          Edit
-                        </Link>
+                        <DashboardReportActions
+                          reportId={report.id}
+                          reportTitle={report.title}
+                          homePhotoUrl={report.home_photo_url}
+                        />
                       </td>
                     </tr>
                   ))}

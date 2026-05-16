@@ -177,9 +177,25 @@ export default async function PublicReportPage({ params }: PageProps) {
       >
         <div className="mx-auto flex max-w-5xl flex-col gap-3 lg:flex-row lg:items-center">
           <div className="flex items-center justify-between gap-3">
-            <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.2em] text-[#7d6b3d]">
-              Report
-            </span>
+            <div className="flex items-center gap-3">
+              <a
+                href="#"
+                aria-label="Back to top of report"
+                className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#b9a16a]/70 bg-[#b9a16a]"
+              >
+                <Image
+                  src="/brand/valor-icon-only.png"
+                  alt="Valor Home Inspections"
+                  width={48}
+                  height={48}
+                  className="h-full w-full object-cover"
+                />
+              </a>
+
+              <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.2em] text-[#7d6b3d]">
+                Report
+              </span>
+            </div>
 
             <PdfExportButton />
           </div>
