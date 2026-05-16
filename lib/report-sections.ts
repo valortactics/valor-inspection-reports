@@ -18,6 +18,14 @@ export function stripSectionNumber(sectionName: string) {
   return sectionName.replace(/^\s*\d+\.\s*/, "").trim();
 }
 
+export function renumberReportSections(sectionNames: string[]) {
+  return sectionNames.map((sectionName, index) => {
+    const unnumberedName = stripSectionNumber(sectionName) || "New Section";
+
+    return `${index + 1}. ${unnumberedName}`;
+  });
+}
+
 export function formatSectionName(sectionName: string) {
   const unnumberedName = stripSectionNumber(sectionName);
   const sectionIndex = numberedSectionNames.findIndex(

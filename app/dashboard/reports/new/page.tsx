@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { defaultReportSections } from "../../../../lib/report-sections";
+import {
+  defaultReportSections,
+  renumberReportSections,
+} from "../../../../lib/report-sections";
 import { supabase } from "../../../../lib/supabase";
 
 export default function NewReportPage() {
@@ -23,16 +26,19 @@ export default function NewReportPage() {
   }
 
   function addSection() {
-    setSections([...sections, `${sections.length + 1}. New Section`]);
+    setSections(
+      renumberReportSections([...sections, `${sections.length + 1}. New Section`])
+    );
   }
 
   function removeSection(index: number) {
-    setSections(sections.filter((_, i) => i !== index));
+    setSections(renumberReportSections(sections.filter((_, i) => i !== index)));
   }
 
   async function createReport() {
     setLoading(true);
     setMessage("Creating report...");
+    const renumberedSections = renumberReportSections(sections);
 
     const { data: report, error: reportError } = await supabase
       .from("reports")
@@ -59,7 +65,7 @@ export default function NewReportPage() {
       return;
     }
 
-    const sectionRows = sections.map((name, index) => ({
+    const sectionRows = renumberedSections.map((name, index) => ({
       report_id: report.id,
       name,
       sort_order: index,

@@ -8,6 +8,7 @@ type Report = {
   client_name: string | null;
   inspection_date: string | null;
   status: string | null;
+  share_token: string | null;
   created_at: string;
 };
 
@@ -85,9 +86,19 @@ export default async function DashboardPage() {
                       </td>
 
                       <td className="py-4 pr-4">
-                        <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-800">
-                          {report.status || "draft"}
-                        </span>
+                        {report.status === "published" &&
+                        report.share_token ? (
+                          <Link
+                            href={`/r/${report.share_token}`}
+                            className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800 underline-offset-2 hover:underline"
+                          >
+                            Published
+                          </Link>
+                        ) : (
+                          <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-800">
+                            {report.status || "draft"}
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-4 pr-4">
