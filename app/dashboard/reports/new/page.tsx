@@ -15,6 +15,7 @@ export default function NewReportPage() {
   const [propertyAddress, setPropertyAddress] = useState("");
   const [clientName, setClientName] = useState("");
   const [inspectionDate, setInspectionDate] = useState("");
+  const [inspectorName, setInspectorName] = useState("");
   const [sections, setSections] = useState([...defaultReportSections]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -47,6 +48,7 @@ export default function NewReportPage() {
         property_address: propertyAddress,
         client_name: clientName,
         inspection_date: inspectionDate || null,
+        inspector_name: inspectorName || null,
         status: "draft",
       })
       .select()
@@ -128,6 +130,13 @@ export default function NewReportPage() {
             type="date"
             value={inspectionDate}
             onChange={(e) => setInspectionDate(e.target.value)}
+          />
+
+          <input
+            className="rounded-xl border p-3"
+            value={inspectorName}
+            onChange={(e) => setInspectorName(e.target.value)}
+            placeholder="Inspector Name"
           />
         </div>
 

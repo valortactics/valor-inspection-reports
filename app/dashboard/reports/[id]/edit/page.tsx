@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { use, useEffect, useRef, useState } from "react";
 import { isVideoUrl } from "../../../../../lib/report-media";
+import { reportKeyItems } from "../../../../../lib/report-key";
 import { formatSectionName } from "../../../../../lib/report-sections";
 import { supabase } from "../../../../../lib/supabase";
 
@@ -46,15 +47,21 @@ const severities = ["Safety Defect", "Major Defect", "Minor Defect"];
 
 function getReportDetailsSnapshot({
   title,
+  inspectionDate,
+  inspectorName,
   summaryText,
   homePhotoUrl,
 }: {
   title: string;
+  inspectionDate: string;
+  inspectorName: string;
   summaryText: string;
   homePhotoUrl: string;
 }) {
   return JSON.stringify({
     title,
+    inspectionDate,
+    inspectorName,
     summaryText,
     homePhotoUrl,
   });
@@ -73,6 +80,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
   const { id: reportId } = use(params);
 
   const [reportTitle, setReportTitle] = useState("");
+  const [inspectionDate, setInspectionDate] = useState("");
+  const [inspectorName, setInspectorName] = useState("");
   const [summaryText, setSummaryText] = useState("");
   const [homePhotoUrl, setHomePhotoUrl] = useState("");
   const [sections, setSections] = useState<Section[]>([]);
@@ -150,12 +159,16 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       }
 
       const loadedTitle = report?.title ?? "";
+      const loadedInspectionDate = report?.inspection_date ?? "";
+      const loadedInspectorName = report?.inspector_name ?? "";
       const loadedSummaryText = report?.summary_text ?? "";
       const loadedHomePhotoUrl = report?.home_photo_url ?? "";
       const loadedFindings = findingsData ?? [];
 
       savedReportDetailsRef.current = getReportDetailsSnapshot({
         title: loadedTitle,
+        inspectionDate: loadedInspectionDate,
+        inspectorName: loadedInspectorName,
         summaryText: loadedSummaryText,
         homePhotoUrl: loadedHomePhotoUrl,
       });
@@ -167,6 +180,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       );
 
       setReportTitle(loadedTitle);
+      setInspectionDate(loadedInspectionDate);
+      setInspectorName(loadedInspectorName);
       setStatus(report?.status ?? "draft");
       setShareToken(report?.share_token ?? "");
       setSummaryText(loadedSummaryText);
@@ -189,6 +204,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
     const currentSnapshot = getReportDetailsSnapshot({
       title: reportTitle,
+      inspectionDate,
+      inspectorName,
       summaryText,
       homePhotoUrl,
     });
@@ -210,6 +227,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         .from("reports")
         .update({
           title: reportTitle,
+          inspection_date: inspectionDate || null,
+          inspector_name: inspectorName || null,
           summary_text: summaryText,
           home_photo_url: homePhotoUrl || null,
         })
@@ -233,7 +252,15 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [homePhotoUrl, loading, reportId, reportTitle, summaryText]);
+  }, [
+    homePhotoUrl,
+    inspectionDate,
+    inspectorName,
+    loading,
+    reportId,
+    reportTitle,
+    summaryText,
+  ]);
 
   useEffect(() => {
     if (loading) {
@@ -321,6 +348,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       .from("reports")
       .update({
         title: reportTitle,
+        inspection_date: inspectionDate || null,
+        inspector_name: inspectorName || null,
         summary_text: summaryText,
         home_photo_url: homePhotoUrl || null,
       })
@@ -335,6 +364,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
     savedReportDetailsRef.current = getReportDetailsSnapshot({
       title: reportTitle,
+      inspectionDate,
+      inspectorName,
       summaryText,
       homePhotoUrl,
     });
@@ -726,6 +757,45 @@ export default function EditReportPage({ params }: EditReportPageProps) {
               onChange={(event) => setReportTitle(event.target.value)}
             />
           </div>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <label className="text-sm font-semibold">Inspection Date</label>
+              <input
+                type="date"
+                className="mt-2 w-full rounded-xl border p-3"
+                value={inspectionDate}
+                onChange={(event) => setInspectionDate(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold">Inspector Name</label>
+              <input
+                className="mt-2 w-full rounded-xl border p-3"
+                value={inspectorName}
+                onChange={(event) => setInspectorName(event.target.value)}
+                placeholder="Inspector name"
+              />
+            </div>
+          </div>
+
+          <section className="rounded-2xl border border-[#b9a16a]/40 bg-[#f7f4ec] p-5">
+            <h2 className="font-serif text-2xl">Report Key</h2>
+
+            <dl className="mt-4 grid gap-3">
+              {reportKeyItems.map((item) => (
+                <div key={item.label} className="rounded-xl bg-white p-4">
+                  <dt className="font-semibold text-[#252b2e]">
+                    {item.label}
+                  </dt>
+                  <dd className="mt-1 leading-7 text-[#394146]">
+                    {item.description}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
 
           <div>
             <label className="text-sm font-semibold">Inspection Summary</label>

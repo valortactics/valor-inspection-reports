@@ -1,10 +1,10 @@
 import Image from "next/image";
-import { isVideoUrl } from "../../../lib/report-media";
+import { reportKeyItems } from "../../../lib/report-key";
 import { formatSectionName } from "../../../lib/report-sections";
 import { supabase } from "../../../lib/supabase";
 import PdfExportButton from "./PdfExportButton";
+import ReportFindingsFilter from "./ReportFindingsFilter";
 
-const TEXT_BOX_TITLE = "Text Box";
 const certifications = [
   {
     src: "/brand/internachi-cpi-logo.png",
@@ -32,69 +32,22 @@ type PageProps = {
   params: Promise<{ shareToken: string }>;
 };
 
-type ReportMedia = {
-  id: string;
-  image_url: string;
-  caption?: string | null;
-};
-
-function renderPublicMedia(mediaItem: ReportMedia, altText: string) {
-  if (isVideoUrl(mediaItem.image_url)) {
-    return (
-      <div
-        key={mediaItem.id}
-        className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm"
-      >
-        <div className="no-print">
-          <video
-            src={mediaItem.image_url}
-            controls
-            playsInline
-            preload="metadata"
-            className="aspect-square w-full bg-black object-contain"
-          />
-
-          <a
-            href={mediaItem.image_url}
-            target="_blank"
-            rel="noreferrer"
-            className="block p-2 text-xs text-[#394146] underline"
-          >
-            Open video in new tab
-          </a>
-        </div>
-
-        <a
-          href={mediaItem.image_url}
-          target="_blank"
-          rel="noreferrer"
-          className="print-only p-4 text-sm font-semibold text-[#252b2e] underline"
-        >
-          View inspection video
-        </a>
-      </div>
-    );
+function formatInspectionDate(inspectionDate?: string | null) {
+  if (!inspectionDate) {
+    return "";
   }
 
-  return (
-    <a
-      key={mediaItem.id}
-      href={mediaItem.image_url}
-      target="_blank"
-      rel="noreferrer"
-    >
-      <div className="relative aspect-square overflow-hidden rounded-xl">
-        <Image
-          src={mediaItem.image_url}
-          alt={mediaItem.caption ?? altText}
-          fill
-          unoptimized
-          sizes="(min-width: 768px) 33vw, 50vw"
-          className="object-cover"
-        />
-      </div>
-    </a>
-  );
+  const [year, month, day] = inspectionDate.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return inspectionDate;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
 }
 
 export default async function PublicReportPage({ params }: PageProps) {
@@ -167,6 +120,14 @@ export default async function PublicReportPage({ params }: PageProps) {
             </h1>
             <p className="mt-3 text-[#d8c995]">{report.property_address}</p>
             <p className="mt-1 text-sm">Client: {report.client_name}</p>
+            {report.inspection_date && (
+              <p className="mt-1 text-sm">
+                Inspection Date: {formatInspectionDate(report.inspection_date)}
+              </p>
+            )}
+            {report.inspector_name && (
+              <p className="mt-1 text-sm">Inspector: {report.inspector_name}</p>
+            )}
           </div>
         </div>
       </header>
@@ -207,6 +168,13 @@ export default async function PublicReportPage({ params }: PageProps) {
               </span>
 
               <div className="flex min-w-max gap-2">
+                <a
+                  href="#report-key"
+                  className="rounded-full border border-[#b9a16a]/70 bg-white px-4 py-2 text-sm font-semibold text-[#252b2e] shadow-sm transition hover:border-[#252b2e] hover:bg-[#252b2e] hover:text-[#f7f4ec] focus:outline-none focus:ring-2 focus:ring-[#b9a16a]"
+                >
+                  Report Key
+                </a>
+
                 {sectionNavigationItems.map((item) => (
                   <a
                     key={item.id}
@@ -265,6 +233,29 @@ export default async function PublicReportPage({ params }: PageProps) {
           </section>
         )}
 
+        <section
+          id="report-key"
+          className="client-report-card mb-8 scroll-mt-28 rounded-3xl bg-white p-6 shadow-sm"
+        >
+          <h2 className="font-serif text-3xl">Report Key</h2>
+
+          <dl className="mt-5 grid gap-4">
+            {reportKeyItems.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5"
+              >
+                <dt className="text-lg font-semibold text-[#252b2e]">
+                  {item.label}
+                </dt>
+                <dd className="mt-2 leading-7 text-[#394146]">
+                  {item.description}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
         {report.summary_text && (
           <section className="client-report-card mb-8 rounded-3xl bg-white p-6 shadow-sm">
             <h2 className="font-serif text-3xl">Inspection Summary</h2>
@@ -274,78 +265,11 @@ export default async function PublicReportPage({ params }: PageProps) {
           </section>
         )}
 
-        <div className="grid gap-8">
-          {sectionNavigationItems.map(({ id, section }) => {
-            const sectionFindings = (findings || []).filter(
-              (finding) => finding.section_id === section.id
-            );
-
-            return (
-              <section
-                key={section.id}
-                id={id}
-                className="client-report-section scroll-mt-28 rounded-3xl bg-white p-6 shadow-sm"
-              >
-                <h2 className="font-serif text-3xl">
-                  {formatSectionName(section.name)}
-                </h2>
-
-                <div className="mt-6 grid gap-5">
-                  {sectionFindings.map((finding) => {
-                    const findingMedia = (photos || []).filter(
-                      (photo) => photo.finding_id === finding.id
-                    );
-
-                    if (finding.title === TEXT_BOX_TITLE) {
-                      return (
-                        <article
-                          key={finding.id}
-                          className="rounded-2xl border border-[#b9a16a]/60 bg-white p-5"
-                        >
-                          <p className="whitespace-pre-wrap leading-8 text-[#394146]">
-                            {finding.description}
-                          </p>
-
-                          {findingMedia.length > 0 && (
-                            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
-                              {findingMedia.map((mediaItem) =>
-                                renderPublicMedia(mediaItem, "Text box media")
-                              )}
-                            </div>
-                          )}
-                        </article>
-                      );
-                    }
-
-                    return (
-                      <article key={finding.id} className="rounded-2xl bg-[#f7f4ec] p-5">
-                        <span className="rounded-full bg-[#252b2e] px-3 py-1 text-xs font-semibold text-[#f7f4ec]">
-                          {finding.severity}
-                        </span>
-
-                        <h3 className="mt-4 text-2xl font-semibold">
-                          {finding.title}
-                        </h3>
-
-                        <p className="mt-3 whitespace-pre-wrap leading-7 text-[#394146]">
-                          {finding.description}
-                        </p>
-
-                        {findingMedia.length > 0 && (
-                          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
-                            {findingMedia.map((mediaItem) =>
-                              renderPublicMedia(mediaItem, "Inspection media")
-                            )}
-                          </div>
-                        )}
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        <ReportFindingsFilter
+          sectionNavigationItems={sectionNavigationItems}
+          findings={findings || []}
+          photos={photos || []}
+        />
       </div>
     </main>
   );
