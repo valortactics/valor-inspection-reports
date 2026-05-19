@@ -10,6 +10,13 @@ export const defaultReportSections = [
   "9. Interior",
 ];
 
+export const roofSubsections = [
+  "Roof Covering",
+  "Flashings and Penetrations",
+  "Gutters and Downspouts",
+  "Roof Framing and Attic",
+];
+
 const numberedSectionNames = defaultReportSections.map((section) =>
   stripSectionNumber(section)
 );
@@ -26,6 +33,21 @@ export function renumberReportSections(sectionNames: string[]) {
   });
 }
 
+export function getSectionNumber(sectionName: string) {
+  const sectionNumber = sectionName.match(/^\s*(\d+)\./)?.[1];
+
+  if (sectionNumber) {
+    return sectionNumber;
+  }
+
+  const sectionIndex = numberedSectionNames.findIndex(
+    (name) =>
+      name.toLowerCase() === stripSectionNumber(sectionName).toLowerCase()
+  );
+
+  return sectionIndex === -1 ? "" : String(sectionIndex + 1);
+}
+
 export function formatSectionName(sectionName: string) {
   const unnumberedName = stripSectionNumber(sectionName);
   const sectionIndex = numberedSectionNames.findIndex(
@@ -37,4 +59,34 @@ export function formatSectionName(sectionName: string) {
   }
 
   return `${sectionIndex + 1}. ${unnumberedName}`;
+}
+
+export function formatFindingNumber(sectionName: string, findingIndex: number) {
+  const sectionNumber = getSectionNumber(sectionName);
+
+  return sectionNumber ? `${sectionNumber}.${findingIndex + 1}` : "";
+}
+
+export function getSectionSubsections(sectionName: string) {
+  return stripSectionNumber(sectionName).toLowerCase() === "roof"
+    ? roofSubsections
+    : [];
+}
+
+export function getFindingSubsectionName(
+  sectionName: string,
+  subsectionName?: string | null
+) {
+  const sectionSubsections = getSectionSubsections(sectionName);
+
+  if (sectionSubsections.length === 0) {
+    return null;
+  }
+
+  const normalizedSubsectionName = subsectionName?.trim().toLowerCase();
+  const matchingSubsection = sectionSubsections.find(
+    (subsection) => subsection.toLowerCase() === normalizedSubsectionName
+  );
+
+  return matchingSubsection ?? sectionSubsections[0];
 }

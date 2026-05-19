@@ -233,6 +233,27 @@ export default async function PublicReportPage({ params }: PageProps) {
           </section>
         )}
 
+        {report.gis_map_url && (
+          <section className="client-report-card mb-8 rounded-3xl bg-white p-6 shadow-sm">
+            <h2 className="text-center font-serif text-3xl">GIS Map</h2>
+
+            <a href={report.gis_map_url} target="_blank" rel="noreferrer">
+              <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-2xl bg-[#f7f4ec] shadow-sm">
+                <Image
+                  src={report.gis_map_url}
+                  alt={`GIS map for ${
+                    report.property_address || "the inspected property"
+                  }`}
+                  fill
+                  unoptimized
+                  sizes="(min-width: 1024px) 896px, 100vw"
+                  className="object-cover"
+                />
+              </div>
+            </a>
+          </section>
+        )}
+
         <section
           id="report-key"
           className="client-report-card mb-8 scroll-mt-28 rounded-3xl bg-white p-6 shadow-sm"

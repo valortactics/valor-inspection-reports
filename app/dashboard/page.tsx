@@ -11,6 +11,7 @@ type Report = {
   status: string | null;
   share_token: string | null;
   home_photo_url: string | null;
+  gis_map_url: string | null;
   created_at: string;
 };
 
@@ -112,6 +113,7 @@ export default async function DashboardPage() {
                           reportId={report.id}
                           reportTitle={report.title}
                           homePhotoUrl={report.home_photo_url}
+                          gisMapUrl={report.gis_map_url}
                         />
                       </td>
                     </tr>

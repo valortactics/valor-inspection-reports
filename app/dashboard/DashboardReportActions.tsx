@@ -9,6 +9,7 @@ type DashboardReportActionsProps = {
   reportId: string;
   reportTitle: string;
   homePhotoUrl?: string | null;
+  gisMapUrl?: string | null;
 };
 
 const STORAGE_PUBLIC_PATH = "/storage/v1/object/public/inspection-photos/";
@@ -31,6 +32,7 @@ export default function DashboardReportActions({
   reportId,
   reportTitle,
   homePhotoUrl,
+  gisMapUrl,
 }: DashboardReportActionsProps) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
@@ -139,6 +141,7 @@ export default function DashboardReportActions({
 
     const storagePaths = [
       getStoragePathFromPublicUrl(homePhotoUrl),
+      getStoragePathFromPublicUrl(gisMapUrl),
       ...(mediaRows ?? []).map((row) =>
         getStoragePathFromPublicUrl(row.image_url)
       ),

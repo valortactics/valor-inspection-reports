@@ -5,7 +5,12 @@ import Image from "next/image";
 import { use, useEffect, useRef, useState } from "react";
 import { isVideoUrl } from "../../../../../lib/report-media";
 import { reportKeyItems } from "../../../../../lib/report-key";
-import { formatSectionName } from "../../../../../lib/report-sections";
+import {
+  formatFindingNumber,
+  formatSectionName,
+  getFindingSubsectionName,
+  getSectionSubsections,
+} from "../../../../../lib/report-sections";
 import { supabase } from "../../../../../lib/supabase";
 
 type Section = {
@@ -20,6 +25,7 @@ type Finding = {
   title: string;
   description: string | null;
   severity: string;
+  subsection_name: string | null;
   sort_order: number;
 };
 
@@ -37,7 +43,11 @@ type EditReportPageProps = {
   }>;
 };
 
-type EditableFindingField = "description" | "severity" | "title";
+type EditableFindingField =
+  | "description"
+  | "severity"
+  | "subsection_name"
+  | "title";
 type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
@@ -51,12 +61,14 @@ function getReportDetailsSnapshot({
   inspectorName,
   summaryText,
   homePhotoUrl,
+  gisMapUrl,
 }: {
   title: string;
   inspectionDate: string;
   inspectorName: string;
   summaryText: string;
   homePhotoUrl: string;
+  gisMapUrl: string;
 }) {
   return JSON.stringify({
     title,
@@ -64,6 +76,7 @@ function getReportDetailsSnapshot({
     inspectorName,
     summaryText,
     homePhotoUrl,
+    gisMapUrl,
   });
 }
 
@@ -72,6 +85,7 @@ function getFindingSnapshot(finding: Finding) {
     title: finding.title,
     description: finding.description ?? "",
     severity: finding.severity,
+    subsection_name: finding.subsection_name ?? "",
     sort_order: finding.sort_order,
   });
 }
@@ -84,6 +98,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
   const [inspectorName, setInspectorName] = useState("");
   const [summaryText, setSummaryText] = useState("");
   const [homePhotoUrl, setHomePhotoUrl] = useState("");
+  const [gisMapUrl, setGisMapUrl] = useState("");
   const [sections, setSections] = useState<Section[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [media, setMedia] = useState<ReportMedia[]>([]);
@@ -163,6 +178,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       const loadedInspectorName = report?.inspector_name ?? "";
       const loadedSummaryText = report?.summary_text ?? "";
       const loadedHomePhotoUrl = report?.home_photo_url ?? "";
+      const loadedGisMapUrl = report?.gis_map_url ?? "";
       const loadedFindings = findingsData ?? [];
 
       savedReportDetailsRef.current = getReportDetailsSnapshot({
@@ -171,6 +187,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         inspectorName: loadedInspectorName,
         summaryText: loadedSummaryText,
         homePhotoUrl: loadedHomePhotoUrl,
+        gisMapUrl: loadedGisMapUrl,
       });
       savedFindingSnapshotsRef.current = Object.fromEntries(
         loadedFindings.map((finding) => [
@@ -186,6 +203,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       setShareToken(report?.share_token ?? "");
       setSummaryText(loadedSummaryText);
       setHomePhotoUrl(loadedHomePhotoUrl);
+      setGisMapUrl(loadedGisMapUrl);
       setSections(sectionsData ?? []);
       setFindings(loadedFindings);
       setMedia(mediaData ?? []);
@@ -208,6 +226,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       inspectorName,
       summaryText,
       homePhotoUrl,
+      gisMapUrl,
     });
 
     if (currentSnapshot === savedReportDetailsRef.current) {
@@ -231,6 +250,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
           inspector_name: inspectorName || null,
           summary_text: summaryText,
           home_photo_url: homePhotoUrl || null,
+          gis_map_url: gisMapUrl || null,
         })
         .eq("id", reportId);
 
@@ -256,6 +276,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     homePhotoUrl,
     inspectionDate,
     inspectorName,
+    gisMapUrl,
     loading,
     reportId,
     reportTitle,
@@ -293,6 +314,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
             title: finding.title,
             description: finding.description,
             severity: finding.severity,
+            subsection_name: finding.subsection_name || null,
             sort_order: finding.sort_order,
           })
           .eq("id", finding.id);
@@ -352,6 +374,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         inspector_name: inspectorName || null,
         summary_text: summaryText,
         home_photo_url: homePhotoUrl || null,
+        gis_map_url: gisMapUrl || null,
       })
       .eq("id", reportId);
 
@@ -368,6 +391,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
       inspectorName,
       summaryText,
       homePhotoUrl,
+      gisMapUrl,
     });
     setAutoSaveStatus("saved");
     setAutoSaveError("");
@@ -426,6 +450,57 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     void uploadHomePhoto(imageFile);
   }
 
+  async function uploadGisMap(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setMessage("Please choose an image file for the GIS map.");
+      return;
+    }
+
+    setMessage("Uploading GIS map...");
+
+    const fileExt = file.name.split(".").pop() || "jpg";
+    const fileName = `${reportId}/gis-map/${crypto.randomUUID()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("inspection-photos")
+      .upload(fileName, file);
+
+    if (uploadError) {
+      setMessage(uploadError.message);
+      return;
+    }
+
+    const { data } = supabase.storage
+      .from("inspection-photos")
+      .getPublicUrl(fileName);
+
+    const { error: reportError } = await supabase
+      .from("reports")
+      .update({ gis_map_url: data.publicUrl })
+      .eq("id", reportId);
+
+    if (reportError) {
+      setMessage(reportError.message);
+      return;
+    }
+
+    setGisMapUrl(data.publicUrl);
+    setMessage("GIS map uploaded.");
+  }
+
+  function uploadGisMapFiles(files: FileList) {
+    const imageFile = Array.from(files).find((file) =>
+      file.type.startsWith("image/")
+    );
+
+    if (!imageFile) {
+      setMessage("Please choose an image file for the GIS map.");
+      return;
+    }
+
+    void uploadGisMap(imageFile);
+  }
+
   async function removeHomePhoto() {
     setMessage("Removing home photo...");
 
@@ -443,11 +518,24 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     setMessage("Home photo removed.");
   }
 
-  async function addFinding(sectionId: string) {
-    const sectionFindings = findings.filter(
-      (finding) => finding.section_id === sectionId
-    );
+  async function removeGisMap() {
+    setMessage("Removing GIS map...");
 
+    const { error } = await supabase
+      .from("reports")
+      .update({ gis_map_url: null })
+      .eq("id", reportId);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setGisMapUrl("");
+    setMessage("GIS map removed.");
+  }
+
+  async function addFinding(sectionId: string, subsectionName?: string | null) {
     const { data, error } = await supabase
       .from("findings")
       .insert({
@@ -455,7 +543,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         title: "New Finding",
         description: "",
         severity: "Minor Defect",
-        sort_order: sectionFindings.length,
+        subsection_name: subsectionName || null,
+        sort_order: getNextSortOrder(sectionId),
       })
       .select()
       .single();
@@ -473,11 +562,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     setMessage("Finding added.");
   }
 
-  async function addTextBox(sectionId: string) {
-    const sectionFindings = findings.filter(
-      (finding) => finding.section_id === sectionId
-    );
-
+  async function addTextBox(sectionId: string, subsectionName?: string | null) {
     const { data, error } = await supabase
       .from("findings")
       .insert({
@@ -485,7 +570,8 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         title: TEXT_BOX_TITLE,
         description: "",
         severity: "Minor Defect",
-        sort_order: sectionFindings.length,
+        subsection_name: subsectionName || null,
+        sort_order: getNextSortOrder(sectionId),
       })
       .select()
       .single();
@@ -525,6 +611,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         title: finding.title,
         description: finding.description,
         severity: finding.severity,
+        subsection_name: finding.subsection_name || null,
         sort_order: finding.sort_order,
       })
       .eq("id", finding.id);
@@ -636,7 +723,49 @@ export default function EditReportPage({ params }: EditReportPageProps) {
   }
 
   function getFindingsForSection(sectionId: string) {
-    return findings.filter((finding) => finding.section_id === sectionId);
+    return findings
+      .filter((finding) => finding.section_id === sectionId)
+      .sort((firstFinding, secondFinding) => {
+        return firstFinding.sort_order - secondFinding.sort_order;
+      });
+  }
+
+  function getNextSortOrder(sectionId: string) {
+    const sectionFindings = getFindingsForSection(sectionId);
+
+    if (sectionFindings.length === 0) {
+      return 0;
+    }
+
+    return (
+      Math.max(...sectionFindings.map((finding) => finding.sort_order)) + 1
+    );
+  }
+
+  function getFindingDisplayNumber(section: Section, finding: Finding) {
+    if (isTextBoxFinding(finding)) {
+      return "";
+    }
+
+    const numberedFindings = getFindingsForSection(section.id).filter(
+      (sectionFinding) => !isTextBoxFinding(sectionFinding)
+    );
+    const findingIndex = numberedFindings.findIndex(
+      (sectionFinding) => sectionFinding.id === finding.id
+    );
+
+    return findingIndex === -1
+      ? ""
+      : formatFindingNumber(section.name, findingIndex);
+  }
+
+  function getFindingsForSubsection(section: Section, subsectionName: string) {
+    return getFindingsForSection(section.id).filter((finding) => {
+      return (
+        getFindingSubsectionName(section.name, finding.subsection_name) ===
+        subsectionName
+      );
+    });
   }
 
   function getMediaForFinding(findingId: string) {
@@ -697,6 +826,342 @@ export default function EditReportPage({ params }: EditReportPageProps) {
           Click to open full size
         </div>
       </a>
+    );
+  }
+
+  function renderSubsectionSelect(section: Section, finding: Finding) {
+    const subsections = getSectionSubsections(section.name);
+
+    if (subsections.length === 0) {
+      return null;
+    }
+
+    return (
+      <label className="grid gap-2 text-sm font-semibold text-[#394146]">
+        Subsection
+        <select
+          className="w-full rounded-xl border border-black/10 bg-white p-3 text-[#252b2e]"
+          value={
+            getFindingSubsectionName(section.name, finding.subsection_name) ??
+            subsections[0]
+          }
+          onChange={(event) =>
+            updateFinding(finding.id, "subsection_name", event.target.value)
+          }
+        >
+          {subsections.map((subsection) => (
+            <option key={subsection} value={subsection}>
+              {subsection}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  function renderFindingEditor(section: Section, finding: Finding) {
+    const findingNumber = getFindingDisplayNumber(section, finding);
+    const subsectionSelect = renderSubsectionSelect(section, finding);
+
+    if (isTextBoxFinding(finding)) {
+      return (
+        <article
+          key={finding.id}
+          className="rounded-2xl border border-[#b9a16a]/60 bg-white p-5"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <label className="text-sm font-semibold text-[#394146]">
+              Text Box
+            </label>
+
+            {subsectionSelect && (
+              <div className="sm:w-80">{subsectionSelect}</div>
+            )}
+          </div>
+
+          <textarea
+            className="mt-3 min-h-32 w-full rounded-xl border border-black/10 p-3 leading-7"
+            value={finding.description ?? ""}
+            onChange={(event) =>
+              updateFinding(finding.id, "description", event.target.value)
+            }
+            placeholder="Add narrative text for this section..."
+          />
+
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-semibold">
+              Photos & Videos
+            </label>
+
+            <label
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                uploadMediaFiles(finding.id, event.dataTransfer.files);
+              }}
+              className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-[#f7f4ec] p-6 text-center transition hover:bg-white"
+            >
+              <span className="font-semibold text-[#252b2e]">
+                Drag photos or videos here
+              </span>
+
+              <span className="mt-1 text-sm text-[#394146]">
+                or click to choose files
+              </span>
+
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files) {
+                    uploadMediaFiles(finding.id, event.target.files);
+                  }
+
+                  event.target.value = "";
+                }}
+              />
+            </label>
+
+            {getMediaForFinding(finding.id).length > 0 && (
+              <div className="mt-4">
+                <p className="mb-3 text-sm font-semibold text-[#394146]">
+                  Media Preview
+                </p>
+
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {getMediaForFinding(finding.id).map((mediaItem) =>
+                    renderMediaPreview(mediaItem, "Text box media")
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => saveFinding(finding)}
+              className="rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
+            >
+              Save Text Box
+            </button>
+
+            <button
+              type="button"
+              onClick={() => deleteFinding(finding.id)}
+              className="rounded-full border border-red-300 px-5 py-2 text-sm font-semibold text-red-700"
+            >
+              Delete Text Box
+            </button>
+          </div>
+        </article>
+      );
+    }
+
+    return (
+      <article
+        key={finding.id}
+        className="rounded-2xl border border-black/10 bg-[#f7f4ec] p-5"
+      >
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {findingNumber && (
+              <span className="rounded-full bg-[#252b2e] px-3 py-1 text-xs font-semibold text-[#f7f4ec]">
+                Finding {findingNumber}
+              </span>
+            )}
+
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#394146]">
+              {finding.severity}
+            </span>
+          </div>
+
+          {subsectionSelect}
+
+          <input
+            className="rounded-xl border p-3 font-semibold"
+            value={finding.title}
+            onChange={(event) =>
+              updateFinding(finding.id, "title", event.target.value)
+            }
+            placeholder="Finding title"
+          />
+
+          <select
+            className="rounded-xl border p-3"
+            value={finding.severity}
+            onChange={(event) =>
+              updateFinding(finding.id, "severity", event.target.value)
+            }
+          >
+            {severities.map((severity) => (
+              <option key={severity} value={severity}>
+                {severity}
+              </option>
+            ))}
+          </select>
+
+          <textarea
+            className="min-h-28 rounded-xl border p-3"
+            value={finding.description ?? ""}
+            onChange={(event) =>
+              updateFinding(finding.id, "description", event.target.value)
+            }
+            placeholder="Description"
+          />
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Photos & Videos
+            </label>
+
+            <label
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                uploadMediaFiles(finding.id, event.dataTransfer.files);
+              }}
+              className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-white p-6 text-center transition hover:bg-[#f7f4ec]"
+            >
+              <span className="font-semibold text-[#252b2e]">
+                Drag photos or videos here
+              </span>
+
+              <span className="mt-1 text-sm text-[#394146]">
+                or click to choose files
+              </span>
+
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files) {
+                    uploadMediaFiles(finding.id, event.target.files);
+                  }
+
+                  event.target.value = "";
+                }}
+              />
+            </label>
+
+            {getMediaForFinding(finding.id).length > 0 && (
+              <div className="mt-4">
+                <p className="mb-3 text-sm font-semibold text-[#394146]">
+                  Media Preview
+                </p>
+
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {getMediaForFinding(finding.id).map((mediaItem) =>
+                    renderMediaPreview(mediaItem, "Inspection media")
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => saveFinding(finding)}
+              className="rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
+            >
+              Save Finding
+            </button>
+
+            <button
+              type="button"
+              onClick={() => deleteFinding(finding.id)}
+              className="rounded-full border border-red-300 px-5 py-2 text-sm font-semibold text-red-700"
+            >
+              Delete Finding
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  function renderAddButtons(sectionId: string, subsectionName?: string | null) {
+    return (
+      <div className="mt-6 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => addTextBox(sectionId, subsectionName)}
+          className="rounded-full border border-[#b9a16a] bg-white px-5 py-2 text-sm font-semibold text-[#252b2e]"
+        >
+          Add Text Box
+        </button>
+
+        <button
+          type="button"
+          onClick={() => addFinding(sectionId, subsectionName)}
+          className="rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
+        >
+          Add Finding
+        </button>
+      </div>
+    );
+  }
+
+  function renderSectionContents(section: Section) {
+    const subsections = getSectionSubsections(section.name);
+
+    if (subsections.length === 0) {
+      return (
+        <>
+          <div className="mt-6 grid gap-5">
+            {getFindingsForSection(section.id).map((finding) =>
+              renderFindingEditor(section, finding)
+            )}
+          </div>
+
+          {renderAddButtons(section.id)}
+        </>
+      );
+    }
+
+    return (
+      <div className="mt-6 grid gap-6">
+        {subsections.map((subsection) => {
+          const subsectionFindings = getFindingsForSubsection(
+            section,
+            subsection
+          );
+
+          return (
+            <section
+              key={subsection}
+              className="rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="font-serif text-2xl">{subsection}</h3>
+                <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#394146]">
+                  {subsectionFindings.length}{" "}
+                  {subsectionFindings.length === 1 ? "entry" : "entries"}
+                </span>
+              </div>
+
+              {subsectionFindings.length > 0 ? (
+                <div className="mt-5 grid gap-5">
+                  {subsectionFindings.map((finding) =>
+                    renderFindingEditor(section, finding)
+                  )}
+                </div>
+              ) : (
+                <p className="mt-5 rounded-2xl border border-[#b9a16a]/40 bg-white p-4 text-sm text-[#394146]">
+                  No entries have been added to this subsection.
+                </p>
+              )}
+
+              {renderAddButtons(section.id, subsection)}
+            </section>
+          );
+        })}
+      </div>
     );
   }
 
@@ -873,6 +1338,72 @@ export default function EditReportPage({ params }: EditReportPageProps) {
             )}
           </div>
 
+          <div>
+            <label className="text-sm font-semibold">GIS Map Photo</label>
+
+            <label
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                uploadGisMapFiles(event.dataTransfer.files);
+              }}
+              className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-[#f7f4ec] p-6 text-center transition hover:bg-white"
+            >
+              <span className="font-semibold text-[#252b2e]">
+                Drag the GIS map here
+              </span>
+
+              <span className="mt-1 text-sm text-[#394146]">
+                or click to choose an image
+              </span>
+
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files) {
+                    uploadGisMapFiles(event.target.files);
+                  }
+
+                  event.target.value = "";
+                }}
+              />
+            </label>
+
+            {gisMapUrl && (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-black/10 bg-[#f7f4ec] shadow-sm">
+                <a href={gisMapUrl} target="_blank" rel="noreferrer">
+                  <div className="relative aspect-[16/9] w-full">
+                    <Image
+                      src={gisMapUrl}
+                      alt="GIS map preview"
+                      fill
+                      unoptimized
+                      sizes="(min-width: 1024px) 896px, 100vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </a>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <p className="text-sm text-[#394146]">
+                    This map will appear under the property photo on the client
+                    page.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={removeGisMap}
+                    className="rounded-full border border-red-300 px-5 py-2 text-sm font-semibold text-red-700"
+                  >
+                    Remove GIS Map
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={saveReportDetails}
@@ -914,260 +1445,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
                 </h2>
               </div>
 
-              <div className="mt-6 grid gap-5">
-                {getFindingsForSection(section.id).map((finding) =>
-                  isTextBoxFinding(finding) ? (
-                    <article
-                      key={finding.id}
-                      className="rounded-2xl border border-[#b9a16a]/60 bg-white p-5"
-                    >
-                      <label className="text-sm font-semibold text-[#394146]">
-                        Text Box
-                      </label>
-
-                      <textarea
-                        className="mt-3 min-h-32 w-full rounded-xl border border-black/10 p-3 leading-7"
-                        value={finding.description ?? ""}
-                        onChange={(event) =>
-                          updateFinding(
-                            finding.id,
-                            "description",
-                            event.target.value
-                          )
-                        }
-                        placeholder="Add narrative text for this section..."
-                      />
-
-                      <div className="mt-4">
-                        <label className="mb-2 block text-sm font-semibold">
-                          Photos & Videos
-                        </label>
-
-                        <label
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            uploadMediaFiles(
-                              finding.id,
-                              event.dataTransfer.files
-                            );
-                          }}
-                          className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-[#f7f4ec] p-6 text-center transition hover:bg-white"
-                        >
-                          <span className="font-semibold text-[#252b2e]">
-                            Drag photos or videos here
-                          </span>
-
-                          <span className="mt-1 text-sm text-[#394146]">
-                            or click to choose files
-                          </span>
-
-                          <input
-                            type="file"
-                            accept="image/*,video/*"
-                            multiple
-                            className="hidden"
-                            onChange={(event) => {
-                              if (event.target.files) {
-                                uploadMediaFiles(
-                                  finding.id,
-                                  event.target.files
-                                );
-                              }
-
-                              event.target.value = "";
-                            }}
-                          />
-                        </label>
-
-                        {getMediaForFinding(finding.id).length > 0 && (
-                          <div className="mt-4">
-                            <p className="mb-3 text-sm font-semibold text-[#394146]">
-                              Media Preview
-                            </p>
-
-                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                              {getMediaForFinding(finding.id).map(
-                                (mediaItem) =>
-                                  renderMediaPreview(
-                                    mediaItem,
-                                    "Text box media"
-                                  )
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={() => saveFinding(finding)}
-                          className="rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
-                        >
-                          Save Text Box
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteFinding(finding.id)}
-                          className="rounded-full border border-red-300 px-5 py-2 text-sm font-semibold text-red-700"
-                        >
-                          Delete Text Box
-                        </button>
-                      </div>
-                    </article>
-                  ) : (
-                    <article
-                      key={finding.id}
-                      className="rounded-2xl border border-black/10 bg-[#f7f4ec] p-5"
-                    >
-                      <div className="grid gap-4">
-                        <input
-                          className="rounded-xl border p-3 font-semibold"
-                          value={finding.title}
-                          onChange={(event) =>
-                            updateFinding(
-                              finding.id,
-                              "title",
-                              event.target.value
-                            )
-                          }
-                          placeholder="Finding title"
-                        />
-
-                        <select
-                          className="rounded-xl border p-3"
-                          value={finding.severity}
-                          onChange={(event) =>
-                            updateFinding(
-                              finding.id,
-                              "severity",
-                              event.target.value
-                            )
-                          }
-                        >
-                          {severities.map((severity) => (
-                            <option key={severity} value={severity}>
-                              {severity}
-                            </option>
-                          ))}
-                        </select>
-
-                        <textarea
-                          className="min-h-28 rounded-xl border p-3"
-                          value={finding.description ?? ""}
-                          onChange={(event) =>
-                            updateFinding(
-                              finding.id,
-                              "description",
-                              event.target.value
-                            )
-                          }
-                          placeholder="Description"
-                        />
-
-                        <div>
-                          <label className="mb-2 block text-sm font-semibold">
-                            Photos & Videos
-                          </label>
-
-                          <label
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              uploadMediaFiles(
-                                finding.id,
-                                event.dataTransfer.files
-                              );
-                            }}
-                            className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#b9a16a] bg-white p-6 text-center transition hover:bg-[#f7f4ec]"
-                          >
-                            <span className="font-semibold text-[#252b2e]">
-                              Drag photos or videos here
-                            </span>
-
-                            <span className="mt-1 text-sm text-[#394146]">
-                              or click to choose files
-                            </span>
-
-                            <input
-                              type="file"
-                              accept="image/*,video/*"
-                              multiple
-                              className="hidden"
-                              onChange={(event) => {
-                                if (event.target.files) {
-                                  uploadMediaFiles(
-                                    finding.id,
-                                    event.target.files
-                                  );
-                                }
-
-                                event.target.value = "";
-                              }}
-                            />
-                          </label>
-
-                          {getMediaForFinding(finding.id).length > 0 && (
-                            <div className="mt-4">
-                              <p className="mb-3 text-sm font-semibold text-[#394146]">
-                                Media Preview
-                              </p>
-
-                              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                                {getMediaForFinding(finding.id).map(
-                                  (mediaItem) =>
-                                    renderMediaPreview(
-                                      mediaItem,
-                                      "Inspection media"
-                                    )
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-3">
-                          <button
-                            type="button"
-                            onClick={() => saveFinding(finding)}
-                            className="rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
-                          >
-                            Save Finding
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => deleteFinding(finding.id)}
-                            className="rounded-full border border-red-300 px-5 py-2 text-sm font-semibold text-red-700"
-                          >
-                            Delete Finding
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  )
-                )}
-              </div>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => addTextBox(section.id)}
-                  className="rounded-full border border-[#b9a16a] bg-white px-5 py-2 text-sm font-semibold text-[#252b2e]"
-                >
-                  Add Text Box
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => addFinding(section.id)}
-                  className="rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
-                >
-                  Add Finding
-                </button>
-              </div>
+              {renderSectionContents(section)}
             </section>
           ))}
         </div>

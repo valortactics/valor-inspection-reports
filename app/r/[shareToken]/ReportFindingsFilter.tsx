@@ -4,7 +4,12 @@ import Image from "next/image";
 import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { isVideoUrl } from "../../../lib/report-media";
-import { formatSectionName } from "../../../lib/report-sections";
+import {
+  formatFindingNumber,
+  formatSectionName,
+  getFindingSubsectionName,
+  getSectionSubsections,
+} from "../../../lib/report-sections";
 
 const TEXT_BOX_TITLE = "Text Box";
 const severityFilters = [
@@ -28,6 +33,7 @@ type Finding = {
   title: string;
   description: string | null;
   severity: string;
+  subsection_name?: string | null;
   sort_order?: number | null;
 };
 
@@ -123,12 +129,119 @@ function matchesSearch(finding: Finding, sectionName: string, searchQuery: strin
     finding.title,
     finding.description ?? "",
     finding.severity,
+    finding.subsection_name ?? "",
     sectionName,
   ]
     .join(" ")
     .toLowerCase();
 
   return searchableText.includes(searchQuery);
+}
+
+function sortFindings(firstFinding: Finding, secondFinding: Finding) {
+  return (firstFinding.sort_order ?? 0) - (secondFinding.sort_order ?? 0);
+}
+
+function getFindingDisplayNumber(
+  section: ReportSection,
+  finding: Finding,
+  sectionFindings: Finding[]
+) {
+  if (isTextBoxFinding(finding)) {
+    return "";
+  }
+
+  const numberedFindings = sectionFindings.filter(
+    (sectionFinding) => !isTextBoxFinding(sectionFinding)
+  );
+  const findingIndex = numberedFindings.findIndex(
+    (sectionFinding) => sectionFinding.id === finding.id
+  );
+
+  return findingIndex === -1
+    ? ""
+    : formatFindingNumber(section.name, findingIndex);
+}
+
+function getFindingsForSubsection(
+  section: ReportSection,
+  sectionFindings: Finding[],
+  subsectionName: string
+) {
+  return sectionFindings.filter((finding) => {
+    return (
+      getFindingSubsectionName(section.name, finding.subsection_name) ===
+      subsectionName
+    );
+  });
+}
+
+function renderPublicFinding(
+  section: ReportSection,
+  finding: Finding,
+  sectionFindings: Finding[],
+  photos: ReportMedia[]
+) {
+  const findingMedia = photos.filter(
+    (photo) => photo.finding_id === finding.id
+  );
+
+  if (isTextBoxFinding(finding)) {
+    return (
+      <article
+        key={finding.id}
+        className="rounded-2xl border border-[#b9a16a]/60 bg-white p-5"
+      >
+        <p className="whitespace-pre-wrap leading-8 text-[#394146]">
+          {finding.description}
+        </p>
+
+        {findingMedia.length > 0 && (
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+            {findingMedia.map((mediaItem) =>
+              renderPublicMedia(mediaItem, "Text box media")
+            )}
+          </div>
+        )}
+      </article>
+    );
+  }
+
+  const findingNumber = getFindingDisplayNumber(
+    section,
+    finding,
+    sectionFindings
+  );
+
+  return (
+    <article key={finding.id} className="rounded-2xl bg-[#f7f4ec] p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        {findingNumber && (
+          <span className="rounded-full bg-[#252b2e] px-3 py-1 text-xs font-semibold text-[#f7f4ec]">
+            Finding {findingNumber}
+          </span>
+        )}
+
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#394146]">
+          {finding.severity}
+        </span>
+      </div>
+
+      <h3 className="mt-4 text-2xl font-semibold">{finding.title}</h3>
+
+      <p className="mt-3 whitespace-pre-wrap leading-7 text-[#394146]">
+        {finding.description}
+      </p>
+
+      {findingMedia.length > 0 && (
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+          {findingMedia.map((mediaItem) =>
+            renderPublicMedia(mediaItem, "Inspection media")
+          )}
+        </div>
+      )}
+    </article>
+  );
 }
 
 export default function ReportFindingsFilter({
@@ -145,7 +258,7 @@ export default function ReportFindingsFilter({
       const sectionLabel = formatSectionName(section.name);
       const sectionFindings = findings.filter(
         (finding) => finding.section_id === section.id
-      );
+      ).sort(sortFindings);
       const visibleFindings = sectionFindings.filter((finding) => {
         const isTextBox = isTextBoxFinding(finding);
         const severityMatches =
@@ -163,6 +276,7 @@ export default function ReportFindingsFilter({
       return {
         id,
         section,
+        sectionFindings,
         visibleFindings,
       };
     });
@@ -253,81 +367,82 @@ export default function ReportFindingsFilter({
       </section>
 
       <div className="grid gap-8">
-        {visibleEntriesBySection.map(({ id, section, visibleFindings }) => (
-          <section
-            key={section.id}
-            id={id}
-            className="client-report-section scroll-mt-28 rounded-3xl bg-white p-6 shadow-sm"
-          >
-            <h2 className="font-serif text-3xl">
-              {formatSectionName(section.name)}
-            </h2>
+        {visibleEntriesBySection.map(
+          ({ id, section, sectionFindings, visibleFindings }) => {
+            const subsections = getSectionSubsections(section.name);
 
-            {visibleFindings.length === 0 ? (
-              <p className="mt-6 rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5 text-sm text-[#394146]">
-                {hasActiveFilter
-                  ? "No findings match the current filter for this section."
-                  : "No findings have been added to this section."}
-              </p>
-            ) : (
-              <div className="mt-6 grid gap-5">
-                {visibleFindings.map((finding) => {
-                  const findingMedia = photos.filter(
-                    (photo) => photo.finding_id === finding.id
-                  );
+            return (
+              <section
+                key={section.id}
+                id={id}
+                className="client-report-section scroll-mt-28 rounded-3xl bg-white p-6 shadow-sm"
+              >
+                <h2 className="font-serif text-3xl">
+                  {formatSectionName(section.name)}
+                </h2>
 
-                  if (isTextBoxFinding(finding)) {
-                    return (
-                      <article
-                        key={finding.id}
-                        className="rounded-2xl border border-[#b9a16a]/60 bg-white p-5"
-                      >
-                        <p className="whitespace-pre-wrap leading-8 text-[#394146]">
-                          {finding.description}
-                        </p>
+                {subsections.length > 0 ? (
+                  <div className="mt-6 grid gap-6">
+                    {subsections.map((subsection) => {
+                      const subsectionFindings = getFindingsForSubsection(
+                        section,
+                        visibleFindings,
+                        subsection
+                      );
 
-                        {findingMedia.length > 0 && (
-                          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
-                            {findingMedia.map((mediaItem) =>
-                              renderPublicMedia(mediaItem, "Text box media")
-                            )}
-                          </div>
-                        )}
-                      </article>
-                    );
-                  }
+                      return (
+                        <section
+                          key={subsection}
+                          className="rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5"
+                        >
+                          <h3 className="font-serif text-2xl">
+                            {subsection}
+                          </h3>
 
-                  return (
-                    <article
-                      key={finding.id}
-                      className="rounded-2xl bg-[#f7f4ec] p-5"
-                    >
-                      <span className="rounded-full bg-[#252b2e] px-3 py-1 text-xs font-semibold text-[#f7f4ec]">
-                        {finding.severity}
-                      </span>
-
-                      <h3 className="mt-4 text-2xl font-semibold">
-                        {finding.title}
-                      </h3>
-
-                      <p className="mt-3 whitespace-pre-wrap leading-7 text-[#394146]">
-                        {finding.description}
-                      </p>
-
-                      {findingMedia.length > 0 && (
-                        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
-                          {findingMedia.map((mediaItem) =>
-                            renderPublicMedia(mediaItem, "Inspection media")
+                          {subsectionFindings.length === 0 ? (
+                            <p className="mt-5 rounded-2xl border border-[#b9a16a]/40 bg-white p-5 text-sm text-[#394146]">
+                              {hasActiveFilter
+                                ? "No findings match the current filter for this subsection."
+                                : "No findings have been added to this subsection."}
+                            </p>
+                          ) : (
+                            <div className="mt-5 grid gap-5">
+                              {subsectionFindings.map((finding) =>
+                                renderPublicFinding(
+                                  section,
+                                  finding,
+                                  sectionFindings,
+                                  photos
+                                )
+                              )}
+                            </div>
                           )}
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        ))}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : visibleFindings.length === 0 ? (
+                  <p className="mt-6 rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5 text-sm text-[#394146]">
+                    {hasActiveFilter
+                      ? "No findings match the current filter for this section."
+                      : "No findings have been added to this section."}
+                  </p>
+                ) : (
+                  <div className="mt-6 grid gap-5">
+                    {visibleFindings.map((finding) =>
+                      renderPublicFinding(
+                        section,
+                        finding,
+                        sectionFindings,
+                        photos
+                      )
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          }
+        )}
       </div>
     </>
   );
