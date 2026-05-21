@@ -47,6 +47,13 @@ export const interiorSubsections = [
   "Appliances",
 ];
 
+export const plumbingSubsections = [
+  "Supply Plumbing",
+  "Faucets and Fixtures",
+  "Drain, Waste, Vent Plumbing",
+  "Water Heating Equipment",
+];
+
 export const heatingDetailFields = [
   { key: "heatingType", label: "Heating Type" },
   { key: "energySource", label: "Energy Source" },
@@ -94,6 +101,7 @@ const reportSubsectionsBySectionName: Record<string, string[]> = {
   "insulation & ventilation": insulationVentilationSubsections,
   "insulation and ventilation": insulationVentilationSubsections,
   interior: interiorSubsections,
+  plumbing: plumbingSubsections,
 };
 
 const sectionDetailFieldsBySectionName: Record<
