@@ -9,13 +9,18 @@ import {
   formatFindingNumber,
   formatSectionName,
   getFindingSubsectionName,
+  getSectionDetailFields,
+  getSectionDetailsTitle,
   getSectionSubsections,
+  type SectionDetailKey,
+  type SectionDetails,
 } from "../../../../../lib/report-sections";
 import { supabase } from "../../../../../lib/supabase";
 
 type Section = {
   id: string;
   name: string;
+  section_details: SectionDetails | null;
   sort_order: number;
 };
 
@@ -90,6 +95,10 @@ function getFindingSnapshot(finding: Finding) {
   });
 }
 
+function getSectionDetailsSnapshot(section: Section) {
+  return JSON.stringify(section.section_details ?? {});
+}
+
 export default function EditReportPage({ params }: EditReportPageProps) {
   const { id: reportId } = use(params);
 
@@ -111,6 +120,7 @@ export default function EditReportPage({ params }: EditReportPageProps) {
   const [autoSaveError, setAutoSaveError] = useState("");
 
   const savedReportDetailsRef = useRef("");
+  const savedSectionDetailsSnapshotsRef = useRef<Record<string, string>>({});
   const savedFindingSnapshotsRef = useRef<Record<string, string>>({});
   const autoSaveRequestRef = useRef(0);
 
@@ -193,6 +203,12 @@ export default function EditReportPage({ params }: EditReportPageProps) {
         loadedFindings.map((finding) => [
           finding.id,
           getFindingSnapshot(finding),
+        ])
+      );
+      savedSectionDetailsSnapshotsRef.current = Object.fromEntries(
+        (sectionsData ?? []).map((section) => [
+          section.id,
+          getSectionDetailsSnapshot(section),
         ])
       );
 
@@ -282,6 +298,62 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     reportTitle,
     summaryText,
   ]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    const changedSections = sections.filter(
+      (section) =>
+        getSectionDetailsSnapshot(section) !==
+        savedSectionDetailsSnapshotsRef.current[section.id]
+    );
+
+    if (changedSections.length === 0) {
+      return;
+    }
+
+    setAutoSaveStatus("pending");
+    setAutoSaveError("");
+
+    const timeoutId = window.setTimeout(async () => {
+      const requestId = autoSaveRequestRef.current + 1;
+      autoSaveRequestRef.current = requestId;
+
+      setAutoSaveStatus("saving");
+
+      for (const section of changedSections) {
+        const { error } = await supabase
+          .from("sections")
+          .update({
+            section_details: section.section_details ?? {},
+          })
+          .eq("id", section.id);
+
+        if (error) {
+          if (autoSaveRequestRef.current === requestId) {
+            setAutoSaveStatus("error");
+            setAutoSaveError(error.message);
+          }
+
+          return;
+        }
+
+        savedSectionDetailsSnapshotsRef.current = {
+          ...savedSectionDetailsSnapshotsRef.current,
+          [section.id]: getSectionDetailsSnapshot(section),
+        };
+      }
+
+      if (autoSaveRequestRef.current === requestId) {
+        setAutoSaveStatus("saved");
+        setAutoSaveError("");
+      }
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, sections]);
 
   useEffect(() => {
     if (loading) {
@@ -776,6 +848,55 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     return finding.title === TEXT_BOX_TITLE;
   }
 
+  function getSectionDetailValue(section: Section, key: SectionDetailKey) {
+    return section.section_details?.[key] ?? "";
+  }
+
+  function updateSectionDetail(
+    sectionId: string,
+    key: SectionDetailKey,
+    value: string
+  ) {
+    setSections((currentSections) =>
+      currentSections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              section_details: {
+                ...(section.section_details ?? {}),
+                [key]: value,
+              },
+            }
+          : section
+      )
+    );
+  }
+
+  async function saveSectionDetails(section: Section) {
+    setMessage(`Saving ${getSectionDetailsTitle(section.name).toLowerCase()}...`);
+    setAutoSaveStatus("saving");
+
+    const { error } = await supabase
+      .from("sections")
+      .update({ section_details: section.section_details ?? {} })
+      .eq("id", section.id);
+
+    if (error) {
+      setMessage(error.message);
+      setAutoSaveStatus("error");
+      setAutoSaveError(error.message);
+      return;
+    }
+
+    savedSectionDetailsSnapshotsRef.current = {
+      ...savedSectionDetailsSnapshotsRef.current,
+      [section.id]: getSectionDetailsSnapshot(section),
+    };
+    setAutoSaveStatus("saved");
+    setAutoSaveError("");
+    setMessage(`${getSectionDetailsTitle(section.name)} saved.`);
+  }
+
   function renderMediaPreview(mediaItem: ReportMedia, altText: string) {
     if (isVideoUrl(mediaItem.image_url)) {
       return (
@@ -826,6 +947,50 @@ export default function EditReportPage({ params }: EditReportPageProps) {
           Click to open full size
         </div>
       </a>
+    );
+  }
+
+  function renderSectionDetailsEditor(section: Section) {
+    const sectionDetailFields = getSectionDetailFields(section.name);
+
+    if (sectionDetailFields.length === 0) {
+      return null;
+    }
+
+    return (
+      <section className="mt-6 rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="font-serif text-2xl">
+            {getSectionDetailsTitle(section.name)}
+          </h3>
+
+          <button
+            type="button"
+            onClick={() => saveSectionDetails(section)}
+            className="w-fit rounded-full bg-[#252b2e] px-5 py-2 text-sm font-semibold text-[#f7f4ec]"
+          >
+            Save {getSectionDetailsTitle(section.name)}
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {sectionDetailFields.map((field) => (
+            <label
+              key={field.key}
+              className="grid gap-2 text-sm font-semibold text-[#394146]"
+            >
+              {field.label}
+              <input
+                className="rounded-xl border border-black/10 bg-white p-3 text-[#252b2e]"
+                value={getSectionDetailValue(section, field.key)}
+                onChange={(event) =>
+                  updateSectionDetail(section.id, field.key, event.target.value)
+                }
+              />
+            </label>
+          ))}
+        </div>
+      </section>
     );
   }
 
@@ -1109,11 +1274,14 @@ export default function EditReportPage({ params }: EditReportPageProps) {
 
   function renderSectionContents(section: Section) {
     const subsections = getSectionSubsections(section.name);
+    const sectionDetailsEditor = renderSectionDetailsEditor(section);
 
     if (subsections.length === 0) {
       return (
         <>
-          <div className="mt-6 grid gap-5">
+          {sectionDetailsEditor}
+
+          <div className={`${sectionDetailsEditor ? "mt-5" : "mt-6"} grid gap-5`}>
             {getFindingsForSection(section.id).map((finding) =>
               renderFindingEditor(section, finding)
             )}
@@ -1125,43 +1293,47 @@ export default function EditReportPage({ params }: EditReportPageProps) {
     }
 
     return (
-      <div className="mt-6 grid gap-6">
-        {subsections.map((subsection) => {
-          const subsectionFindings = getFindingsForSubsection(
-            section,
-            subsection
-          );
+      <>
+        {sectionDetailsEditor}
 
-          return (
-            <section
-              key={subsection}
-              className="rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5"
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="font-serif text-2xl">{subsection}</h3>
-                <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#394146]">
-                  {subsectionFindings.length}{" "}
-                  {subsectionFindings.length === 1 ? "entry" : "entries"}
-                </span>
-              </div>
+        <div className={`${sectionDetailsEditor ? "mt-5" : "mt-6"} grid gap-6`}>
+          {subsections.map((subsection) => {
+            const subsectionFindings = getFindingsForSubsection(
+              section,
+              subsection
+            );
 
-              {subsectionFindings.length > 0 ? (
-                <div className="mt-5 grid gap-5">
-                  {subsectionFindings.map((finding) =>
-                    renderFindingEditor(section, finding)
-                  )}
+            return (
+              <section
+                key={subsection}
+                className="rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="font-serif text-2xl">{subsection}</h3>
+                  <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#394146]">
+                    {subsectionFindings.length}{" "}
+                    {subsectionFindings.length === 1 ? "entry" : "entries"}
+                  </span>
                 </div>
-              ) : (
-                <p className="mt-5 rounded-2xl border border-[#b9a16a]/40 bg-white p-4 text-sm text-[#394146]">
-                  No entries have been added to this subsection.
-                </p>
-              )}
 
-              {renderAddButtons(section.id, subsection)}
-            </section>
-          );
-        })}
-      </div>
+                {subsectionFindings.length > 0 ? (
+                  <div className="mt-5 grid gap-5">
+                    {subsectionFindings.map((finding) =>
+                      renderFindingEditor(section, finding)
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-5 rounded-2xl border border-[#b9a16a]/40 bg-white p-4 text-sm text-[#394146]">
+                    No entries have been added to this subsection.
+                  </p>
+                )}
+
+                {renderAddButtons(section.id, subsection)}
+              </section>
+            );
+          })}
+        </div>
+      </>
     );
   }
 

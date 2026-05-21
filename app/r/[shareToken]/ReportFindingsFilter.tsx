@@ -8,7 +8,10 @@ import {
   formatFindingNumber,
   formatSectionName,
   getFindingSubsectionName,
+  getSectionDetailFields,
+  getSectionDetailsTitle,
   getSectionSubsections,
+  type SectionDetails,
 } from "../../../lib/report-sections";
 
 const TEXT_BOX_TITLE = "Text Box";
@@ -24,6 +27,7 @@ type SeverityFilter = (typeof severityFilters)[number];
 type ReportSection = {
   id: string;
   name: string;
+  section_details?: SectionDetails | null;
   sort_order?: number | null;
 };
 
@@ -244,6 +248,44 @@ function renderPublicFinding(
   );
 }
 
+function renderPublicSectionDetails(section: ReportSection) {
+  const sectionDetailFields = getSectionDetailFields(section.name);
+
+  if (sectionDetailFields.length === 0) {
+    return null;
+  }
+
+  const sectionDetails = section.section_details ?? {};
+
+  return (
+    <section className="mt-6 rounded-2xl border border-[#b9a16a]/50 bg-[#f7f4ec] p-5">
+      <h3 className="font-serif text-2xl">
+        {getSectionDetailsTitle(section.name)}
+      </h3>
+
+      <dl className="mt-5 grid gap-4 md:grid-cols-2">
+        {sectionDetailFields.map((field) => {
+          const value = sectionDetails[field.key]?.trim();
+
+          return (
+            <div
+              key={field.key}
+              className="rounded-xl border border-[#b9a16a]/40 bg-white p-4"
+            >
+              <dt className="text-sm font-semibold text-[#252b2e]">
+                {field.label}
+              </dt>
+              <dd className="mt-2 min-h-6 text-[#394146]">
+                {value || "Not entered"}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </section>
+  );
+}
+
 export default function ReportFindingsFilter({
   sectionNavigationItems,
   findings,
@@ -381,8 +423,16 @@ export default function ReportFindingsFilter({
                   {formatSectionName(section.name)}
                 </h2>
 
+                {renderPublicSectionDetails(section)}
+
                 {subsections.length > 0 ? (
-                  <div className="mt-6 grid gap-6">
+                  <div
+                    className={`${
+                      getSectionDetailFields(section.name).length > 0
+                        ? "mt-5"
+                        : "mt-6"
+                    } grid gap-6`}
+                  >
                     {subsections.map((subsection) => {
                       const subsectionFindings = getFindingsForSubsection(
                         section,
