@@ -45,6 +45,7 @@ export const interiorSubsections = [
   "Floors, Ceilings, and Walls",
   "Doors and Windows",
   "Appliances",
+  "Stairs, Hallways, and Ramps",
 ];
 
 export const plumbingSubsections = [
