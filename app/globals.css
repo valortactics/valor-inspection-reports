@@ -69,6 +69,18 @@ body {
     border: 1px solid rgba(37, 43, 46, 0.15);
   }
 
+  body.print-repair-report-only .client-report-header,
+  body.print-repair-report-only nav,
+  body.print-repair-report-only #report-key,
+  body.print-repair-report-only .client-report-card:not(#repair-report),
+  body.print-repair-report-only .client-report-section {
+    display: none !important;
+  }
+
+  body.print-repair-report-only #repair-report {
+    display: block !important;
+  }
+
   a {
     color: inherit;
     text-decoration: none;

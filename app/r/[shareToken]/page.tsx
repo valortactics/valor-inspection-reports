@@ -287,6 +287,13 @@ export default async function PublicReportPage({ params }: PageProps) {
         )}
 
         <ReportFindingsFilter
+          reportDetails={{
+            title: report.title,
+            propertyAddress: report.property_address,
+            clientName: report.client_name,
+            inspectionDate: formatInspectionDate(report.inspection_date),
+            inspectorName: report.inspector_name,
+          }}
           sectionNavigationItems={sectionNavigationItems}
           findings={findings || []}
           photos={photos || []}
