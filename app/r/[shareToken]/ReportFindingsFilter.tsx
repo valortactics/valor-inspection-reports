@@ -88,6 +88,7 @@ type RepairReportFinding = {
   subsectionName: string | null;
   finding: Finding;
   findingNumber: string;
+  media: ReportMedia[];
 };
 
 type RepairReportSectionGroup = {
@@ -179,6 +180,10 @@ function matchesSearch(finding: Finding, sectionName: string, searchQuery: strin
 
 function sortFindings(firstFinding: Finding, secondFinding: Finding) {
   return (firstFinding.sort_order ?? 0) - (secondFinding.sort_order ?? 0);
+}
+
+function sortMedia(firstMedia: ReportMedia, secondMedia: ReportMedia) {
+  return (firstMedia.sort_order ?? 0) - (secondMedia.sort_order ?? 0);
 }
 
 function getFindingDisplayNumber(
@@ -287,6 +292,14 @@ function buildRepairReportText(
       item.subsectionName ? `Subsection: ${item.subsectionName}` : null,
       `Severity: ${item.finding.severity}`,
       description ? `Description: ${description}` : null,
+      ...item.media.map((mediaItem, mediaIndex) => {
+        const caption = mediaItem.caption?.trim();
+        const mediaLabel = caption
+          ? `Media ${mediaIndex + 1} (${caption})`
+          : `Media ${mediaIndex + 1}`;
+
+        return `${mediaLabel}: ${mediaItem.image_url}`;
+      }),
     ].filter((line): line is string => line !== null);
   });
 
@@ -577,6 +590,34 @@ function renderRepairReportPreview(
                         {item.finding.description}
                       </p>
                     )}
+
+                    {item.media.length > 0 && (
+                      <div className="mt-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7d6b3d]">
+                          Photos and Videos
+                        </p>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+                          {item.media.map((mediaItem) => (
+                            <figure
+                              key={mediaItem.id}
+                              className="rounded-xl border border-[#b9a16a]/30 bg-[#f7f4ec] p-2"
+                            >
+                              {renderPublicMedia(
+                                mediaItem,
+                                `${findingLabel} media`
+                              )}
+
+                              {mediaItem.caption && (
+                                <figcaption className="mt-2 text-xs leading-5 text-[#394146]">
+                                  {mediaItem.caption}
+                                </figcaption>
+                              )}
+                            </figure>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -664,9 +705,12 @@ export default function ReportFindingsFilter({
             finding,
             sectionFindings
           ),
+          media: photos
+            .filter((photo) => photo.finding_id === finding.id)
+            .sort(sortMedia),
         }));
     });
-  }, [findings, sectionNavigationItems, selectedFindingIdSet]);
+  }, [findings, photos, sectionNavigationItems, selectedFindingIdSet]);
 
   const repairFindingCount = useMemo(() => {
     return findings.filter((finding) => !isTextBoxFinding(finding)).length;
