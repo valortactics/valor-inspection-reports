@@ -107,7 +107,7 @@ function renderPublicMedia(mediaItem: ReportMedia, altText: string) {
     return (
       <div
         key={mediaItem.id}
-        className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm"
+        className="client-report-media overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm"
       >
         <div className="no-print">
           <video
@@ -146,6 +146,7 @@ function renderPublicMedia(mediaItem: ReportMedia, altText: string) {
       href={mediaItem.image_url}
       target="_blank"
       rel="noreferrer"
+      className="client-report-media block"
     >
       <div className="relative aspect-square overflow-hidden rounded-xl">
         <Image
@@ -367,7 +368,7 @@ function renderPublicFinding(
         </p>
 
         {findingMedia.length > 0 && (
-          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+          <div className="client-report-media-grid mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
             {findingMedia.map((mediaItem) =>
               renderPublicMedia(mediaItem, "Text box media")
             )}
@@ -421,7 +422,7 @@ function renderPublicFinding(
       </p>
 
       {findingMedia.length > 0 && (
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+        <div className="client-report-media-grid mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
           {findingMedia.map((mediaItem) =>
             renderPublicMedia(mediaItem, "Inspection media")
           )}
@@ -598,7 +599,7 @@ function renderRepairReportPreview(
                           Photos and Videos
                         </p>
 
-                        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+                        <div className="client-report-media-grid mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
                           {item.media.map((mediaItem) => (
                             <figure
                               key={mediaItem.id}

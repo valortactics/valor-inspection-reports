@@ -217,7 +217,7 @@ export default async function PublicReportPage({ params }: PageProps) {
             <h2 className="text-center font-serif text-3xl">Property Photo</h2>
 
             <a href={report.home_photo_url} target="_blank" rel="noreferrer">
-              <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-2xl bg-[#f7f4ec] shadow-sm">
+              <div className="client-report-media relative mt-6 aspect-[16/9] overflow-hidden rounded-2xl bg-[#f7f4ec] shadow-sm">
                 <Image
                   src={report.home_photo_url}
                   alt={`Large photo of ${
@@ -238,7 +238,7 @@ export default async function PublicReportPage({ params }: PageProps) {
             <h2 className="text-center font-serif text-3xl">GIS Map</h2>
 
             <a href={report.gis_map_url} target="_blank" rel="noreferrer">
-              <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-2xl bg-[#f7f4ec] shadow-sm">
+              <div className="client-report-media relative mt-6 aspect-[16/9] overflow-hidden rounded-2xl bg-[#f7f4ec] shadow-sm">
                 <Image
                   src={report.gis_map_url}
                   alt={`GIS map for ${

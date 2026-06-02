@@ -69,6 +69,32 @@ body {
     border: 1px solid rgba(37, 43, 46, 0.15);
   }
 
+  .client-report-media-grid {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .client-report-media,
+  .client-report-media-grid > *,
+  .client-report-page figure,
+  .client-report-page img,
+  .client-report-page video {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .client-report-media,
+  .client-report-page figure {
+    display: block;
+    overflow: hidden;
+  }
+
+  .client-report-page img,
+  .client-report-page video {
+    break-before: avoid;
+    break-after: avoid;
+  }
+
   body.print-repair-report-only .client-report-header,
   body.print-repair-report-only nav,
   body.print-repair-report-only #report-key,
