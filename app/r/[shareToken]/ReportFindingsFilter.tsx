@@ -802,8 +802,16 @@ export default function ReportFindingsFilter({
     window.addEventListener("afterprint", cleanupPrintMode, { once: true });
 
     try {
-      await prepareReportForPrint("#repair-report");
+      const printPreparation = await prepareReportForPrint("#repair-report");
+      const cleanupPrintPreparation = () => {
+        printPreparation.cleanup();
+      };
+
+      window.addEventListener("afterprint", cleanupPrintPreparation, {
+        once: true,
+      });
       window.print();
+      window.setTimeout(cleanupPrintPreparation, 1000);
     } finally {
       window.setTimeout(cleanupPrintMode, 1000);
     }

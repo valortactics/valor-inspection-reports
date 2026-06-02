@@ -15,8 +15,16 @@ export default function PdfExportButton() {
     setIsPreparing(true);
 
     try {
-      await prepareReportForPrint();
+      const printPreparation = await prepareReportForPrint();
+      const cleanupPrintPreparation = () => {
+        printPreparation.cleanup();
+      };
+
+      window.addEventListener("afterprint", cleanupPrintPreparation, {
+        once: true,
+      });
       window.print();
+      window.setTimeout(cleanupPrintPreparation, 1000);
     } finally {
       setIsPreparing(false);
     }
