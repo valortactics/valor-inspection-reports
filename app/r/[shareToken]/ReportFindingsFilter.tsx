@@ -20,6 +20,7 @@ import {
   getSectionSubsections,
   type SectionDetails,
 } from "../../../lib/report-sections";
+import { prepareReportForPrint } from "./print-utils";
 
 const TEXT_BOX_TITLE = "Text Box";
 const severityFilters = [
@@ -474,7 +475,7 @@ function renderRepairReportPreview(
   copyStatus: string,
   onCopy: () => void | Promise<void>,
   onDownload: () => void,
-  onPrint: () => void
+  onPrint: () => void | Promise<void>
 ) {
   const detailRows = getReportDetailRows(reportDetails);
   const repairReportGroups = groupRepairReportFindings(repairFindings);
@@ -788,7 +789,7 @@ export default function ReportFindingsFilter({
     URL.revokeObjectURL(downloadUrl);
   }
 
-  function printRepairReport() {
+  async function printRepairReport() {
     if (selectedRepairCount === 0) {
       return;
     }
@@ -799,8 +800,13 @@ export default function ReportFindingsFilter({
 
     document.body.classList.add("print-repair-report-only");
     window.addEventListener("afterprint", cleanupPrintMode, { once: true });
-    window.print();
-    window.setTimeout(cleanupPrintMode, 1000);
+
+    try {
+      await prepareReportForPrint("#repair-report");
+      window.print();
+    } finally {
+      window.setTimeout(cleanupPrintMode, 1000);
+    }
   }
 
   return (
