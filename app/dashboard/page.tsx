@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import DashboardReportActions from "./DashboardReportActions";
 import { supabase } from "../../lib/supabase";
 
@@ -16,6 +17,8 @@ type Report = {
 };
 
 export default async function DashboardPage() {
+  await connection();
+
   const { data: reports, error } = await supabase
     .from("reports")
     .select("*")
