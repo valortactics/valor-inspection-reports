@@ -24,6 +24,7 @@ export const exteriorSubsections = [
   "Driveways and Walkways",
   "Stairs, Stoops, and Ramps",
   "Decks, Porches, and Balconies",
+  "Site Grading, Vegetation, and Landscaping",
 ];
 
 export const electricalSubsections = [
